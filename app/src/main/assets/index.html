@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>RW Code — редактор для Rusted Warfare</title>
+<style>
+:root{
+  --bg:#1b1d1f;--bg2:#232629;--bar:#2b2e32;--line:#34383d;--fg:#d6d9dc;--dim:#7d848b;
+  --acc:#ffb300;--acc2:#4fc3f7;--err:#ff5252;--warn:#ffca28;--ok:#66bb6a;
+  --sec:#ffb74d;--key:#4fc3f7;--val:#d6d9dc;--num:#ce93d8;--kw:#f06292;--str:#a5d6a7;--com:#6a737d;--fn:#82aaff;--dir:#ff8a65;--bool:#ba68c8;
+  --lh:20px;--fs:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,Roboto,sans-serif;overflow:hidden}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.mono{font-family:"JetBrains Mono",ui-monospace,Menlo,Consolas,"Droid Sans Mono",monospace}
+/* верхняя панель как в Pydroid */
+#top{display:flex;align-items:center;gap:2px;background:var(--bar);height:48px;padding:0 4px;border-bottom:1px solid #000;flex:none}
+#top .title{flex:1;min-width:0;padding:0 8px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#top .title small{display:block;color:var(--dim);font-size:11px}
+.ib{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-size:20px;flex:none}
+.ib:active,.ib:hover{background:#ffffff14}
+.ib.run{background:var(--acc);color:#000;font-weight:700}
+#tabs{display:flex;overflow-x:auto;background:var(--bg2);flex:none;scrollbar-width:none;border-bottom:1px solid #000}
+#tabs::-webkit-scrollbar{display:none}
+.tab{padding:8px 12px;font-size:13px;color:var(--dim);white-space:nowrap;border-bottom:2px solid transparent;display:flex;gap:8px;align-items:center}
+.tab.on{color:var(--fg);border-bottom-color:var(--acc);background:var(--bg)}
+.tab i{font-style:normal;opacity:.6;padding:0 2px}
+#findbar{display:none;gap:6px;padding:6px;background:var(--bar);flex:none;flex-wrap:wrap}
+#findbar.on{display:flex}
+#findbar input{flex:1;min-width:110px;background:#111;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px;font-size:14px}
+#findbar button{background:#3b3f45;border-radius:6px;padding:7px 10px;font-size:13px}
+/* редактор */
+#edwrap{position:relative;flex:1;min-height:0;display:flex;background:var(--bg)}
+#gutter{flex:none;width:44px;overflow:hidden;background:var(--bg2);color:var(--dim);text-align:right;padding:8px 6px 8px 0;font-size:12px;line-height:var(--lh);user-select:none;white-space:pre;border-right:1px solid var(--line)}
+#gutter .e{color:var(--err);font-weight:700}#gutter .w{color:var(--warn);font-weight:700}#gutter .cur{color:var(--acc)}
+#code{position:relative;flex:1;min-width:0;overflow:hidden}
+#hl,#ta{position:absolute;inset:0;margin:0;padding:8px 12px 80px 8px;font-size:var(--fs);line-height:var(--lh);white-space:pre;tab-size:4;border:0;letter-spacing:0;font-family:inherit}
+#hl{pointer-events:none;color:var(--val);overflow:hidden}
+#ta{background:transparent;color:transparent;caret-color:var(--acc);resize:none;outline:0;overflow:auto;-webkit-text-fill-color:transparent;z-index:2}
+#ta::selection{background:#4fc3f755;-webkit-text-fill-color:transparent}
+#hl .curline{background:#ffffff0a;display:inline-block;min-width:100%}
+.s{color:var(--sec);font-weight:600}.k{color:var(--key)}.d{color:var(--dir)}.c{color:var(--com);font-style:italic}.n{color:var(--num)}.b{color:var(--bool)}.q{color:var(--str)}.o{color:var(--kw)}.f{color:var(--fn)}.p{color:var(--dim)}
+.er{text-decoration:underline wavy var(--err);text-underline-offset:3px}.wr{text-decoration:underline wavy var(--warn);text-underline-offset:3px}
+/* подсказки и доп. клавиши как в cxxdroid */
+#info{flex:none;background:#14161f;border-top:1px solid var(--line);padding:5px 10px;font-size:12px;color:#b8c2cc;min-height:28px;max-height:64px;overflow:auto}
+#info b{color:var(--acc2)}#info .v{color:var(--dim)}
+#sugg{display:flex;overflow-x:auto;background:var(--bar);flex:none;scrollbar-width:none;border-top:1px solid #000}
+#sugg::-webkit-scrollbar{display:none}
+#sugg button{padding:9px 12px;font-size:14px;white-space:nowrap;color:var(--acc2);border-right:1px solid var(--line)}
+#sugg button small{color:var(--dim);margin-left:6px;font-size:11px}
+#sugg:empty{display:none}
+#keys{display:flex;background:#25282c;flex:none;overflow-x:auto;scrollbar-width:none}
+#keys::-webkit-scrollbar{display:none}
+#keys button{flex:1 0 auto;min-width:40px;height:40px;font-size:16px;color:var(--fg);border-right:1px solid #1b1d1f}
+#keys button:active{background:var(--acc);color:#000}
+#status{display:flex;gap:12px;background:var(--bar);padding:4px 10px;font-size:11px;color:var(--dim);flex:none;border-top:1px solid #000;white-space:nowrap;overflow:hidden}
+#status .grow{flex:1}.er-t{color:var(--err)}.wr-t{color:var(--warn)}.ok-t{color:var(--ok)}
+/* панели */
+.panel{position:fixed;inset:0;display:none;z-index:20}
+.panel.on{display:block}
+.panel .bk{position:absolute;inset:0;background:#0009}
+.panel .sheet{position:absolute;background:var(--bg2);display:flex;flex-direction:column;box-shadow:0 0 30px #000a}
+#drawer .sheet{left:0;top:0;bottom:0;width:min(420px,92vw)}
+#probs .sheet,#menu .sheet{left:0;right:0;bottom:0;max-height:70vh;border-radius:14px 14px 0 0}
+@media(min-width:800px){#probs .sheet,#menu .sheet{left:auto;right:16px;bottom:16px;width:440px;border-radius:12px}}
+.sheet h3{margin:0;padding:12px 14px;font-size:15px;background:var(--bar);display:flex;justify-content:space-between;align-items:center}
+.sheet .body{overflow:auto;flex:1;padding:8px}
+.row{padding:10px;border-radius:8px;font-size:13px;display:block;width:100%;text-align:left}
+.row:hover,.row:active{background:#ffffff10}
+.row .t{font-size:12px;color:var(--dim)}
+.chip{display:inline-block;padding:2px 8px;background:#3b3f45;border-radius:10px;font-size:11px;margin:2px;color:var(--fg)}
+.chip.on{background:var(--acc);color:#000}
+.inp{width:100%;background:#111;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:9px;font-size:14px;margin:4px 0}
+textarea.inp{height:90px;font-size:12px}
+.btn{background:#3b3f45;border-radius:8px;padding:9px 12px;font-size:13px;margin:3px 3px 3px 0;display:inline-block}
+.btn.pri{background:var(--acc);color:#000;font-weight:600}
+.note{font-size:12px;color:var(--dim);line-height:1.45;margin:6px 2px}
+.tabsel{display:flex;gap:4px;flex-wrap:wrap}
+.kt{color:var(--key);font-weight:600}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <button class="ib" id="bMenu" title="Справочник">☰</button>
+    <div class="title"><span id="fname">unit.ini</span><small id="fsub">RW Code</small></div>
+    <button class="ib" id="bFind" title="Поиск">⌕</button>
+    <button class="ib" id="bUndo" title="Отменить">↶</button>
+    <button class="ib" id="bRedo" title="Вернуть">↷</button>
+    <button class="ib run" id="bCheck" title="Проверить код">▶</button>
+    <button class="ib" id="bMore" title="Меню">⋮</button>
+  </div>
+  <div id="tabs"></div>
+  <div id="findbar">
+    <input id="fq" placeholder="Найти" autocapitalize="off" autocomplete="off">
+    <input id="fr" placeholder="Заменить на" autocapitalize="off" autocomplete="off">
+    <button id="fn">Далее</button><button id="fa">Заменить все</button><button id="fx">✕</button>
+  </div>
+  <div id="edwrap">
+    <div id="gutter" class="mono"></div>
+    <div id="code" class="mono"><pre id="hl" class="mono"></pre><textarea id="ta" class="mono" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off"></textarea></div>
+  </div>
+  <div id="info"></div>
+  <div id="sugg"></div>
+  <div id="keys"></div>
+  <div id="status" class="mono"><span id="sPos">Ln 1, Col 1</span><span id="sProb">✓</span><span class="grow"></span><span id="sDict">словарь: встроенный</span></div>
+</div>
+
+<div class="panel" id="drawer"><div class="bk" data-close></div><div class="sheet">
+  <h3>Справочник RW <button class="ib" data-close style="width:32px;height:32px;font-size:16px">✕</button></h3>
+  <div class="body">
+    <input class="inp" id="rq" placeholder="Поиск ключа или описания…" autocomplete="off">
+    <div id="rsec" class="tabsel"></div>
+    <div id="rlist"></div>
+  </div>
+</div></div>
+
+<div class="panel" id="probs"><div class="bk" data-close></div><div class="sheet">
+  <h3 id="ph">Проблемы <button class="ib" data-close style="width:32px;height:32px;font-size:16px">✕</button></h3>
+  <div class="body" id="plist"></div>
+</div></div>
+
+<div class="panel" id="menu"><div class="bk" data-close></div><div class="sheet">
+  <h3>Меню <button class="ib" data-close style="width:32px;height:32px;font-size:16px">✕</button></h3>
+  <div class="body" id="mbody"></div>
+</div></div>
+
+<script>
+"use strict";
+/* ===================== ВСТРОЕННЫЙ СЛОВАРЬ RW (по Unit Modding Reference 1.13–1.16) ===================== */
+// формат: "ключ|тип|описание"; тип: b=bool, n=число, s=строка, l=логика, e:a/b/c=перечисление, t=теги, f=файл
+const B = {
+core:[
+"name|s|Внутреннее имя юнита (не показывается в игре). ОБЯЗАТЕЛЬНО",
+"mass|n|Вес, влияет на столкновения. ОБЯЗАТЕЛЬНО",
+"radius|n|Зона выбора юнита. ОБЯЗАТЕЛЬНО",
+"price|s|Цена: credits или ресурсы, напр. gold=5. ОБЯЗАТЕЛЬНО",
+"maxHp|n|Максимальное здоровье. ОБЯЗАТЕЛЬНО",
+"buildSpeed|s|Время постройки, напр. 20s",
+"class|s|Резерв, по умолчанию CustomUnitMetadata",
+"techLevel|n|Уровень технологии 1–3 (цвета в интерфейсе)",
+"altNames|s|Альтернативные имена через запятую",
+"strictLevel|n|1.13.3: 1 = ошибка при дублировании ключей",
+"isBio|b|Биологический юнит (звуки, следы)",
+"isBug|b|Жук: меняет значения смерти и сортировку в песочнице",
+"isBuilder|b|Строит здания",
+"streamingCost|b|1.15: оплата постепенно во время постройки",
+"switchPriceWithStreamingCost|b|1.15: цену в потоковую оплату",
+"selfRegenRate|n|Пассивное восстановление HP",
+"maxShield|n|Максимум щита","startShieldAtZero|b|Щит стартует с нуля","shieldRegen|n|Регенерация щита",
+"energyMax|n|Максимум энергии (боеприпасы)","energyRegen|n|Восстановление энергии",
+"energyStartingPercentage|n|Стартовый процент энергии (0..1)",
+"energyNeedsToRechargeToFull|b|После нуля оружие ждёт полной зарядки",
+"energyRegenWhenRecharging|n|Регенерация во время перезарядки",
+"armour|n|1.13: снижение урона за попадание","armourMinDamageToKeep|n|1.13: минимальный сохраняемый урон",
+"borrowResourcesWhileAlive|s|1.13.3: ресурсы берутся при создании и возвращаются при смерти",
+"borrowResourcesWhileBuilt|s|1.15: то же, но после постройки",
+"generation_resources|s|1.13.3: доход ресурсами","generation_credits|n|Доход кредитами","generation_delay|n|Период дохода (по умолчанию 40)","generation_active|l|1.13.3: условие включения дохода",
+"showInEditor|b|Показывать в редакторе","displayText|s|Название в игре (есть варианты displayText_ru)","displayDescription|s|Описание в игре",
+"displayLocaleKey|s|Ключ перевода","displayRadius|n|Размер круга выбора","uiTargetRadius|n|Радиус цели при атаке/ремонте",
+"shieldRenderRadius|n|Радиус отрисовки щита","showOnMinimap|b|1.13.3: показ на миникарте","showOnMinimapToEnemies|b|1.14: полезно для стелс-юнитов",
+"copyFrom|f|Берёт данные из других ini/template: ROOT:a.template, b.ini (CORE: — ресурсы игры)",
+"dont_load|b|Не загружать юнит как отдельный (файл-основа)",
+"overrideAndReplace|s|Заменяет другой юнит (в т.ч. ванильный) этим",
+"tags|t|Теги юнита через запятую (классификация, фильтры атаки)",
+"stayNeutral|b|false отключает захват нейтрального юнита",
+"createNeutral|b|Всегда создавать юнита в нейтральной команде",
+"createOnAggressiveTeam|b|Спавн в агрессивной команде (одиночная игра)",
+"canNotBeDirectlyAttacked|b|Никто не может целиться в юнита; пропускается при проверке победы",
+"canNotBeDamaged|b|Не получает урон (по умолчанию = canNotBeDirectlyAttacked)",
+"canOnlyBeAttackedByUnitsWithTags|t|Атаковать могут только юниты с этими тегами",
+"unitsSpawnedOnDeath|s|Юниты при смерти: tank*5, hoverTank",
+"unitsSpawnedOnDeath_setToTeamOfLastAttacker|b|Порождённые получают команду убийцы",
+"defineUnitMemory|s|Переменные юнита: boolean x, unit y, string z",
+"updateUnitMemory|s|Обновление памяти без действия","updateUnitMemoryRate|n|Частота обновления памяти",
+"autoTriggerCheckRate|e:everyFrame/every4Frames/every8Frames|Частота проверки автотриггеров",
+"autoTriggerOnEventRecursionLimit|n|Лимит рекурсии событий (по умолч. 1)",
+"selfBuildRate|n|Скорость самопостройки без строителя","placeOnlyOnResPool|b|Только на ресурсной точке",
+"transportUnitsRequireTag|t|Какие юниты можно перевозить"
+],
+graphics:[
+"image|f|Основное изображение. ОБЯЗАТЕЛЬНО","image_wreak|f|Остов после смерти (none — без остова)",
+"image_turret|f|Изображение башни","image_shadow|s|Тень (AUTO)","total_frames|n|Число кадров в ленте",
+"imageScale|n|Масштаб изображения","turretImageScale|n|Масштаб башни","dustEffect|b|Пыль при движении","dustEffectReverse|b|Пыль при заднем ходе",
+"shadowOffsetX|n|Смещение тени X","shadowOffsetY|n|Смещение тени Y","teamColoringMode|s|Режим окраски под команду"
+],
+attack:[
+"canAttack|b|Может ли юнит атаковать. ОБЯЗАТЕЛЬНО","canAttackFlyingUnits|l|Бьёт воздух. ОБЯЗАТЕЛЬНО","canAttackLandUnits|l|Бьёт сушу. ОБЯЗАТЕЛЬНО",
+"canAttackUnderwaterUnits|l|Бьёт подводных. ОБЯЗАТЕЛЬНО","canAttackNotTouchingWaterUnits|l|Бьёт юнитов не в воде",
+"maxAttackRange|n|Максимальная дальность","turretSize|n|Размер башни","turretTurnSpeed|n|Скорость поворота башни","turretRotateWithBody|b|Башня вращается с корпусом",
+"shootDelay|n|Задержка выстрела","shootDelayMultiplier|n|1.15: множитель задержки","shootDamageMultiplier|n|Множитель урона",
+"turretMultiTargeting|b|Каждая турель стреляет по своей цели",
+"canOnlyAttackUnitsWithTags|t|1.13.3: бить только юнитов с тегами","canOnlyAttackUnitsWithoutTags|t|1.13.3: бить только юнитов без тегов",
+"disablePassiveTargeting|b|Атаковать только по приказу","stopTargetingAfterFiring|b|Сбросить цель после выстрела",
+"attackMovement|e:normal/bomber|Поведение при атаке","isMelee|b|Ближний бой","dieOnAttack|b|Умирает при атаке","isFixedFiring|b|Нужно навести корпус",
+"aimOffsetSpread|n|Разброс прицеливания (по умолч. 0.6)","clearTurretTargetAfterFiring|b|Сброс цели турели после выстрела"
+],
+movement:[
+"movementType|e:NONE/LAND/AIR/WATER/HOVER/BUILDING/OVER_CLIFF/OVER_CLIFF_WATER|Тип движения. ОБЯЗАТЕЛЬНО",
+"moveSpeed|n|Скорость","maxTurnSpeed|n|Скорость поворота","moveAccelerationSpeed|n|Разгон","moveDecelerationSpeed|n|Торможение","moveIgnoringBody|b|Двигаться независимо от корпуса"
+],
+turret:[
+"x|n|Смещение X","y|n|Смещение Y","projectile|s|Номер/имя [projectile_X]","delay|s|Задержка выстрела турели (1.3s)",
+"limitingRange|n|Дальность турели (меньше maxAttackRange)","limitingMinRange|n|Минимальная дальность","limitingAngle|n|Сектор обстрела","idleDir|n|Положение в покое",
+"canShoot|b|По умолчанию true","canAttackCondition|l|Условие работы турели: if not self.flying",
+"canAttackFlyingUnits|l|Сужает цели турели","canAttackLandUnits|l|Сужает цели турели","canAttackUnderwaterUnits|l|Сужает цели турели",
+"canOnlyAttackUnitsWithTags|t|Цели только с тегами","canOnlyAttackUnitsWithoutTags|t|Цели только без тегов",
+"onShoot_triggerActions|s|Действие при выстреле","interceptProjectiles_withTags|t|Перехват снарядов (ПВО)","unloadUpToXUnitsAndGiveAttackOrder|n|Выгрузка юнитов",
+"turretSize|n|Размер турели","turretTurnSpeed|n|Скорость поворота турели"
+],
+projectile:[
+"directDamage|n|Прямой урон","speed|n|Скорость снаряда","life|n|Время жизни","image|f|Изображение",
+"friendlyFire|e:false/true/only-ignoreEnemy|1.13: урон своим (по союзникам не бьёт)","ignoreParentShootDamageMultiplier|b|1.15",
+"largeHitEffect|s|Эффект попадания","explodeEffect|s|Эффект взрыва","areaDamage|n|Урон по области","areaRadius|n|Радиус урона","tags|t|Теги снаряда"
+],
+action:[
+"text|s|Текст кнопки","description|s|Описание кнопки","iconImage|f|Иконка","isVisible|l|Условие видимости","isActive|l|Условие доступности",
+"price|s|Цена действия","buildSpeed|s|Время действия","autoTrigger|l|true/условие — срабатывать автоматически",
+"autoTriggerOnEvent|ev|Срабатывать по событию (created, teamChanged, …)",
+"convertTo|s|Превратить в другого юнита","switchToTeam|l|1.15: перейти в команду №","switchToNeutralTeam|b|1.13.3: в нейтральную (союзна всем)",
+"switchToAggressiveTeam|b|1.13.3: во встроенную враждебную команду",
+"addGlobalTeamTags|t|Добавить метку команде игрока","removeGlobalTeamTags|t|Убрать метку у команды",
+"temporarilyAddTags|t|Добавить метку юниту до конверсии","temporarilyRemoveTags|t|Убрать метку юниту","resetToDefaultTags|b|Сбросить метки к стандартным",
+"setUnitStats|s|1.15: maxHp+=self.energy+100, hp+=50 …","resetUnitStats|b|Сбросить изменённые статы",
+"setUnitMemory|s|Записать в память юнита","sendMessageTo|s|Отправить сообщение юниту","sendMessageWithData|s|Сообщение с данными","sendMessageWithTags|t|Сообщение с тегами",
+"spawnUnits|s|Создать юнитов: tank*3(spawnSource=…)","addResources|s|Добавить ресурсы / setFlag=1","setCustomTarget1|s|customTarget1","setCustomTarget2|s|customTarget2",
+"resetCustomTimer|b|Сброс таймера","teleportTo|s|Телепорт","setHeight|l|Высота","alsoTriggerOrQueueActionWithTarget|s|Связанное действие","id|s|ID для связи при конверсии","tags|t|Теги действия"
+],
+canBuild:["name|s|Имя юнита","pos|n|Позиция в меню","isVisible|l|Условие видимости","isLocked|l|Условие блокировки"],
+ai:["useAsBuilder|b|ИИ использует как строителя","useAsHarvester|b|ИИ использует как сборщика"],
+any:[]
+};
+const EVENTS="created,completeAndActive,destroyed,killedAnyUnit,queuedUnitFinished,queueItemAdded,queueItemCancelled,teleported,touchTargetSuccess,newWaypointGivenByPlayer,teamChanged,transportingNewUnit,tookDamage,newMessage,attachmentRemoved,enteredTransport,leftTransport,transportUnloadedOrRemovedUnit".split(",");
+const FUNCS=[
+"self.teamId()|id команды юнита (нейтральная = -1)","self.tags(includes='')|Проверка меток юнита","self.globalTeamTags(includes='')|Проверка меток команды",
+"self.isOnNeutralTeam()|Юнит в нейтральной команде","self.isControlledByAI()|Управляется ИИ","self.completed()|Постройка завершена","self.isAttacking()|Атакует",
+"self.hasFlag(id=0)|Флаг 0–31","self.energy|Энергия","self.flying|Юнит летит","self.hp|Здоровье","self.maxHp()|Макс. HP","self.x()|X","self.y()|Y","self.customTimer()|Таймер",
+"self.lastConverted(withinSeconds=1)|Недавняя смена","numberOfUnitsInTeam(withTag='',greaterThan=0)|Юнитов в своей команде","numberOfUnitsInEnemyTeam()|Врагов","numberOfUnitsInNeutralTeam()|Нейтралов",
+"nearestUnit(withinRange=500,withTag='',relation='enemy')|Ближайший юнит (медленно)","memory('')|Память юнита","readUnitMemory('','number',0)|Память другого юнита","eventData('','number')|Данные сообщения",
+"rnd(0,1)|Случайное синхронное","distanceBetween(a,b)|Расстояние","self.resource.credits|Кредиты","thisActionTarget|Цель действия"];
+const SECTIONS="core,graphics,attack,movement,ai,turret_,projectile_,attachment_,action_,hiddenAction_,effect_,animation_,logicBoolean_,placementRule_,global_resource_,resource_,decal_,comment_,template_,canBuild_,leg_,arm_".split(",");
+const REQ={core:["name","maxHp","price","mass","radius"],graphics:["image"],attack:["canAttack","canAttackFlyingUnits","canAttackLandUnits","canAttackUnderwaterUnits"],movement:["movementType"]};
+
+/* ===================== СЛОВАРЬ ===================== */
+let builtin=[],sheet=[];       // записи {key,type,desc,sec,ver,src}
+function secType(h){
+  h=h.toLowerCase().replace(/^\[|\]$/g,'');
+  if(/^(core|graphics|attack|movement|ai)$/.test(h))return h;
+  if(h.startsWith('turret'))return 'turret';
+  if(h.startsWith('projectile'))return 'projectile';
+  if(h.startsWith('action')||h.startsWith('hiddenaction'))return 'action';
+  if(h.startsWith('canbuild'))return 'canBuild';
+  return 'any';
+}
+for(const sec in B)for(const s of B[sec]){const [key,type,desc]=s.split('|');builtin.push({key,type,desc,sec,src:'b'});}
+function loadSheetLS(){try{const j=localStorage.getItem('rw_sheet');if(j)sheet=JSON.parse(j);}catch(e){}}
+function saveSheetLS(){try{localStorage.setItem('rw_sheet',JSON.stringify(sheet));}catch(e){}}
+function allEntries(){return builtin.concat(sheet);}
+function keysFor(type){
+  const seen=new Map();
+  for(const e of allEntries()){
+    if(e.sec===type||type==='any'||e.sec==='any'){ if(!seen.has(e.key)||(e.src==='s'&&!seen.get(e.key).desc))seen.set(e.key,e); }
+  }
+  return [...seen.values()];
+}
+function findEntry(key,type){
+  let best=null;
+  for(const e of allEntries()){ if(e.key.toLowerCase()===key.toLowerCase()){ if(e.sec===type)return e; if(!best)best=e; } }
+  return best;
+}
+const allKeySet=()=>new Set(allEntries().map(e=>e.key.toLowerCase()));
+
+/* ===================== ИМПОРТ ТАБЛИЦЫ ===================== */
+function parseCSV(t){
+  const rows=[];let r=[],c='',q=false;
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){ if(ch=='"'){ if(t[i+1]=='"'){c+='"';i++;} else q=false;} else c+=ch; }
+    else if(ch=='"')q=true; else if(ch==','||ch=='\t'){r.push(c);c='';}
+    else if(ch=='\n'){r.push(c);rows.push(r);r=[];c='';} else if(ch!='\r')c+=ch;}
+  r.push(c);rows.push(r);return rows;
+}
+const TYPEWORDS=new Set(['single','multi','file','string','boolean','bool','float','int','integer','number','logicboolean','enum','list','version','section','code','description','example','value','type','unit','tags','string(s)','file(s)','ini']);
+function importRows(rows,tabName){
+  let cur='any',n=0;const out=[];
+  for(const row of rows){
+    const cells=row.map(x=>(x||'').trim()).filter(Boolean);
+    if(!cells.length)continue;
+    const h=cells.find(c=>/^\[[^\]\s]+\]$/.test(c));
+    if(h){cur=secType(h);}
+    const ver=(cells.find(c=>/^1\.\d+(\.\d+)?(p\d+)?$/.test(c))||'');
+    const ki=cells.findIndex(c=>/^@?[A-Za-z_][\w.]{1,47}:?$/.test(c)&&!TYPEWORDS.has(c.toLowerCase().replace(/:$/,''))&&!/^\[/.test(c)&&!/^1\./.test(c));
+    if(ki<0||h)continue;
+    const key=cells[ki].replace(/:$/,'');
+    if(/^(NAME|X|Y)$/.test(key))continue;
+    const rest=cells.slice(ki+1);
+    const desc=rest.find(c=>/\s/.test(c)&&c.length>8)||'';
+    const type=rest.find(c=>TYPEWORDS.has(c.toLowerCase()))||'s';
+    if(!desc)continue;
+    out.push({key,type:/bool/i.test(type)?'b':/float|int|number/i.test(type)?'n':'s',desc:desc.slice(0,300),sec:cur,ver,src:'s',tab:tabName||''});
+  }
+  return out;
+}
+function mergeSheet(list){
+  const m=new Map(sheet.map(e=>[e.key+'|'+e.sec,e]));
+  for(const e of list)m.set(e.key+'|'+e.sec,e);
+  sheet=[...m.values()];saveSheetLS();updDictStatus();
+}
+function updDictStatus(){document.getElementById('sDict').textContent='словарь: '+builtin.length+' встроенных'+(sheet.length?' + '+sheet.length+' из таблицы':'');}
+
+/* ===================== ФАЙЛЫ ===================== */
+const SAMPLE=`# Пример юнита RW — редактируйте или создайте новый
+[core]
+name: my_tank
+displayText: Мой танк
+price: 250
+maxHp: 360
+mass: 4000
+radius: 14
+techLevel: 1
+buildSpeed: 8s
+
+[graphics]
+total_frames: 1
+image: tank.png
+image_turret: tank_turret.png
+image_wreak: none
+
+[attack]
+canAttack: true
+canAttackFlyingUnits: false
+canAttackLandUnits: true
+canAttackUnderwaterUnits: false
+turretSize: 20
+turretTurnSpeed: 4
+maxAttackRange: 150
+
+[movement]
+movementType: LAND
+moveSpeed: 0.9
+maxTurnSpeed: 2.6
+
+[turret_1]
+x: 0
+y: 0
+projectile: 1
+delay: 1.3s
+
+[projectile_1]
+directDamage: 30
+speed: 6
+life: 60
+`;
+let files=[],cur=0;
+function loadFiles(){try{const j=localStorage.getItem('rw_files');if(j){const o=JSON.parse(j);files=o.files;cur=o.cur||0;}}catch(e){}
+  if(!files.length){files=[{name:'unit.ini',text:SAMPLE}];cur=0;} if(cur>=files.length)cur=0;}
+let saveT;function saveFiles(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem('rw_files',JSON.stringify({files,cur}));}catch(e){}},400);}
+
+/* ===================== ЭЛЕМЕНТЫ ===================== */
+const $=id=>document.getElementById(id);
+const ta=$('ta'),hl=$('hl'),gut=$('gutter');
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+let problems=[];
+
+/* ===================== ПОДСВЕТКА ===================== */
+const VRE=/("[^"]*"|'[^']*')|(\$\{[^}]*\})|\b(ROOT|CORE):|\b(\d+(?:\.\d+)?(?:s|m)?)\b|\b(true|false|none|NONE|AUTO|null)\b|\b(if|and|or|not)\b|(\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?=\()/g;
+function hv(s){
+  let o='',i=0,m;VRE.lastIndex=0;
+  while((m=VRE.exec(s))){
+    o+=esc(s.slice(i,m.index));const t=m[0];
+    if(m[1])o+='<span class="q">'+esc(t)+'</span>';
+    else if(m[2])o+='<span class="d">'+esc(t)+'</span>';
+    else if(m[3])o+='<span class="d">'+esc(t)+'</span>';
+    else if(m[4])o+='<span class="n">'+esc(t)+'</span>';
+    else if(m[5])o+='<span class="b">'+esc(t)+'</span>';
+    else if(m[6])o+='<span class="o">'+esc(t)+'</span>';
+    else o+='<span class="f">'+esc(t)+'</span>';
+    i=m.index+t.length;
+  }
+  return o+esc(s.slice(i));
+}
+function hlLine(l,sev){
+  const wrap=(h)=>sev?'<span class="'+(sev==='e'?'er':'wr')+'">'+h+'</span>':h;
+  if(/^\s*#/.test(l))return '<span class="c">'+esc(l)+'</span>';
+  let m=l.match(/^(\s*)(\[[^\]]*\]?)(.*)$/);
+  if(m&&m[2][0]==='[')return esc(m[1])+wrap('<span class="s">'+esc(m[2])+'</span>')+hv(m[3]);
+  m=l.match(/^(\s*)(@\w+)(.*)$/);
+  if(m)return esc(m[1])+'<span class="d">'+esc(m[2])+'</span>'+hv(m[3]);
+  m=l.match(/^(\s*)([\w.]+)(\s*[:=])(.*)$/);
+  if(m)return esc(m[1])+wrap('<span class="k">'+esc(m[2])+'</span>')+'<span class="p">'+esc(m[3])+'</span>'+hv(m[4]);
+  return hv(l);
+}
+function render(){
+  const lines=ta.value.split('\n');
+  const sev={};for(const p of problems){if(!sev[p.line]||p.sev==='e')sev[p.line]=p.sev;}
+  const cl=curLine();
+  hl.innerHTML=lines.map((l,i)=>{const h=hlLine(l,sev[i]);return i===cl?'<span class="curline">'+(h||' ')+'</span>':h;}).join('\n')+'\n';
+  gut.innerHTML=lines.map((_,i)=>'<span class="'+(sev[i]==='e'?'e':sev[i]==='w'?'w':i===cl?'cur':'')+'">'+(i+1)+'</span>').join('\n');
+  syncScroll();
+}
+function syncScroll(){hl.style.transform='translate('+(-ta.scrollLeft)+'px,'+(-ta.scrollTop)+'px)';gut.scrollTop=ta.scrollTop;}
+ta.addEventListener('scroll',syncScroll);
+
+/* ===================== КУРСОР / КОНТЕКСТ ===================== */
+function curLine(){return ta.value.slice(0,ta.selectionStart).split('\n').length-1;}
+function curCol(){const p=ta.value.slice(0,ta.selectionStart);return p.length-p.lastIndexOf('\n');}
+function sectionAt(line){
+  const ls=ta.value.split('\n');
+  for(let i=line;i>=0;i--){const m=ls[i].match(/^\s*\[([^\]]+)\]/);if(m)return m[1];}
+  return '';
+}
+function updInfo(){
+  const ls=ta.value.split('\n'),i=curLine(),l=ls[i]||'';
+  const sec=sectionAt(i),type=secType(sec);
+  $('sPos').textContent='Ln '+(i+1)+', Col '+curCol();
+  const m=l.match(/^\s*([\w.@]+)\s*[:=]/),h=l.match(/^\s*\[([^\]]+)\]/);
+  let html='';
+  if(m){const e=findEntry(m[1],type);
+    html=e?'<b>'+esc(e.key)+'</b> <span class="v">['+esc(sec||'—')+(e.ver?' · '+esc(e.ver):'')+(e.src==='s'?' · таблица':'')+']</span> — '+esc(e.desc||'—'):'<b>'+esc(m[1])+'</b> <span class="v">— нет в словаре (импортируйте таблицу или проверьте имя)</span>';}
+  else if(h){html='<b>['+esc(h[1])+']</b> <span class="v">— секция '+esc(type)+'</span>';}
+  else html='<span class="v">Подсказка: начните вводить ключ — снизу появятся варианты. ▶ — проверка кода.</span>';
+  $('info').innerHTML=html;
+}
+/* ===================== АВТОДОПОЛНЕНИЕ (полоса как в cxxdroid) ===================== */
+const bools=['true','false'];
+function suggestions(){
+  const pos=ta.selectionStart;if(ta.selectionEnd!==pos)return {list:[],len:0};
+  const ls=ta.value.split('\n'),i=curLine(),pre=ls[i].slice(0,curCol()-1);
+  const sec=sectionAt(i),type=secType(sec);
+  let m,out=[],part='';
+  if((m=pre.match(/^\s*\[([^\]]*)$/))){part=m[1];
+    out=SECTIONS.filter(s=>s.startsWith(part.toLowerCase())||part==='').map(s=>({t:s.endsWith('_')?s:s+']',d:''}));
+    return {list:out.slice(0,24),len:part.length};}
+  if((m=pre.match(/^\s*(@?[\w.]*)$/))){part=m[1];
+    if(part.startsWith('@'))out=['@copyFromSection ','@define ','@global ','@memory ','@copyFrom_skipThisSection'].filter(x=>x.startsWith(part)).map(x=>({t:x,d:''}));
+    else{const p=part.toLowerCase();
+      const ks=keysFor(type).filter(e=>!p||e.key.toLowerCase().startsWith(p)).concat(keysFor(type).filter(e=>p&&!e.key.toLowerCase().startsWith(p)&&e.key.toLowerCase().includes(p)));
+      out=ks.map(e=>({t:e.key+': ',d:e.type==='b'?'bool':''}));}
+    return {list:out.slice(0,30),len:part.length};}
+  if((m=pre.match(/^\s*([\w.]+)\s*[:=]\s*(.*)$/))){
+    const key=m[1],val=m[2];const e=findEntry(key,type);
+    const tm=val.match(/[\w.]*$/);part=tm?tm[0]:'';
+    let cands=[];
+    if(/^autoTriggerOnEvent$/i.test(key))cands=EVENTS;
+    else if(e&&e.type&&e.type.startsWith('e:'))cands=e.type.slice(2).split('/');
+    else if(e&&(e.type==='b'))cands=bools;
+    else if(e&&e.type==='l'||/^(autoTrigger|isVisible|isActive|canAttackCondition|generation_active)$/i.test(key))cands=['if ','not ','and ','or ','true','false'].concat(FUNCS.map(f=>f.split('|')[0]));
+    else if(/^copyFrom$/i.test(key))cands=['ROOT:','CORE:'];
+    if(e&&e.type==='b'&&/^(true|false)$/.test(val.trim())) cands=[];
+    out=cands.filter(c=>c.toLowerCase().startsWith(part.toLowerCase())&&c!==part).map(c=>({t:c,d:''}));
+    return {list:out.slice(0,30),len:part.length};}
+  return {list:[],len:0};
+}
+function showSugg(){
+  const {list,len}=suggestions();const box=$('sugg');box.innerHTML='';
+  for(const s of list){const b=document.createElement('button');b.innerHTML=esc(s.t.trim())+(s.d?'<small>'+s.d+'</small>':'');
+    b.onmousedown=b.ontouchstart=ev=>{ev.preventDefault();};
+    b.onclick=()=>{ta.focus();ta.setSelectionRange(ta.selectionStart-len,ta.selectionStart);ins(s.t);};
+    box.appendChild(b);}
+}
+function ins(t){ta.focus();if(!document.execCommand('insertText',false,t)){const a=ta.selectionStart;ta.setRangeText(t,a,ta.selectionEnd,'end');onInput();}}
+
+/* ===================== ЛИНТЕР ===================== */
+function lint(){
+  const ls=ta.value.split('\n'),P=[];const secs=[],names=new Map();
+  let curS=null,tri=false,hasCopy=false,keys={};
+  const known=allKeySet();
+  const flush=()=>{ if(curS&&REQ[curS.type]&&!hasCopyFor(curS)){for(const r of REQ[curS.type])if(!(r.toLowerCase() in curS.keys))P.push({line:curS.line,sev:'e',msg:'['+curS.name+']: нет обязательного ключа '+r});}};
+  const hasCopyFor=s=>s.copy;
+  ls.forEach((l,i)=>{
+    const q=(l.match(/"""/g)||[]).length; if(tri){if(q%2)tri=false;return;} if(q%2){tri=true;}
+    if(!l.trim()||/^\s*#/.test(l))return;
+    let m=l.match(/^\s*\[([^\]]*)\]?/);
+    if(m&&/^\s*\[/.test(l)){flush();
+      const name=m[1].trim();if(!/\]/.test(l))P.push({line:i,sev:'e',msg:'Не закрыта скобка секции'});
+      const ok=SECTIONS.some(s=>s.endsWith('_')?name.toLowerCase().startsWith(s.toLowerCase()):name.toLowerCase()===s);
+      if(!ok)P.push({line:i,sev:'w',msg:'Неизвестная секция ['+name+']'});
+      if(names.has(name.toLowerCase())&&!/^(leg|arm)_/.test(name))P.push({line:i,sev:'e',msg:'Дубликат секции ['+name+'] (первая в строке '+(names.get(name.toLowerCase())+1)+')'});
+      names.set(name.toLowerCase(),i);
+      curS={name,type:secType(name),line:i,keys:{},copy:false};secs.push(curS);return;}
+    if(/^\s*@/.test(l)){const mm=l.match(/^\s*@copyFromSection\s+(.+)/);if(mm){curS&&(curS.copy=true);curS&&(curS.cfs=(curS.cfs||[]).concat(mm[1].split(',').map(x=>({n:x.trim(),line:i}))));}return;}
+    m=l.match(/^\s*([\w.]+)\s*[:=]/);
+    if(!m){P.push({line:i,sev:'w',msg:'Строка не похожа на «ключ: значение»'});return;}
+    if(!curS){P.push({line:i,sev:'e',msg:'Ключ вне секции'});return;}
+    const k=m[1].toLowerCase();
+    if(k in curS.keys&&!/^(price|text|name)$/.test(k))P.push({line:i,sev:'w',msg:'Повтор ключа «'+m[1]+'» в ['+curS.name+']'});
+    curS.keys[k]=i;
+    if(k==='copyfrom')curS.copy=true;
+    if(curS.type!=='any'&&!known.has(k)&&!/^(animation_|image_|action_|displaytext|displaydescription)/i.test(m[1])&&!/^\d/.test(m[1]))
+      P.push({line:i,sev:'w',msg:'Возможно, неизвестный ключ «'+m[1]+'» для ['+curS.name+']'});
+    if(k==='projectile'&&/^turret/i.test(curS.name)){curS.proj=(curS.proj||[]).concat([{v:l.split(/[:=]/)[1].trim(),line:i}]);}
+    if(curS.type==='movement'&&k==='movementtype'){const v=l.split(/[:=]/)[1].trim();if(!/^(NONE|LAND|AIR|WATER|HOVER|BUILDING|OVER_CLIFF|OVER_CLIFF_WATER)$/.test(v))P.push({line:i,sev:'e',msg:'movementType: недопустимое значение «'+v+'»'});}
+  });
+  flush();
+  const nm=new Set([...names.keys()]);
+  let turrets=0;
+  for(const s of secs){
+    if(/^turret_/i.test(s.name))turrets++;
+    for(const p of (s.proj||[])){const t=p.v;if(t&&!nm.has('projectile_'+t.toLowerCase()))P.push({line:p.line,sev:'w',msg:'Нет секции [projectile_'+t+']'});}
+    for(const c of (s.cfs||[])){if(!nm.has(c.n.toLowerCase())&&!/^template_/.test(c.n)&&!/\/|:/.test(c.n))P.push({line:c.line,sev:'w',msg:'@copyFromSection: нет секции «'+c.n+'»'});}
+  }
+  if(turrets>30)P.push({line:0,sev:'e',msg:'Турелей '+turrets+' > 30 (лимит RW)'});
+  P.sort((a,b)=>a.line-b.line);return P;
+}
+function runLint(){problems=lint();const e=problems.filter(p=>p.sev==='e').length,w=problems.length-e;
+  const el=$('sProb');el.className=e?'er-t':w?'wr-t':'ok-t';el.textContent=e||w?('✖ '+e+'  ⚠ '+w):'✓ без ошибок';render();}
+function showProblems(){runLint();const L=$('plist');L.innerHTML='';
+  $('ph').firstChild.textContent='Проблемы: '+problems.length+' ';
+  if(!problems.length)L.innerHTML='<div class="note ok-t">Всё в порядке ✓ (проверка по встроенному словарю'+(sheet.length?' и таблице':'')+')</div>';
+  for(const p of problems){const b=document.createElement('button');b.className='row';
+    b.innerHTML='<span class="'+(p.sev==='e'?'er-t':'wr-t')+'">'+(p.sev==='e'?'✖':'⚠')+'</span> '+esc(p.msg)+'<div class="t">строка '+(p.line+1)+'</div>';
+    b.onclick=()=>{closeAll();gotoLine(p.line);};L.appendChild(b);}
+  openP('probs');}
+function gotoLine(n){const ls=ta.value.split('\n');let pos=0;for(let i=0;i<n;i++)pos+=ls[i].length+1;ta.focus();ta.setSelectionRange(pos,pos+ls[n].length);ta.scrollTop=Math.max(0,n*20-80);onCursor();}
+
+/* ===================== ОБНОВЛЕНИЯ ===================== */
+let lt;
+function onInput(){files[cur].text=ta.value;saveFiles();render();showSugg();updInfo();clearTimeout(lt);lt=setTimeout(runLint,500);}
+function onCursor(){render();updInfo();showSugg();}
+ta.addEventListener('input',onInput);
+['keyup','click','touchend'].forEach(ev=>ta.addEventListener(ev,()=>setTimeout(onCursor,0)));
+ta.addEventListener('keydown',e=>{
+  if(e.key==='Tab'){e.preventDefault();ins('    ');}
+  else if(e.key==='Enter'){ // автоотступ
+    const ls=ta.value.slice(0,ta.selectionStart).split('\n'),ind=(ls[ls.length-1].match(/^\s*/)||[''])[0];
+    if(ind){e.preventDefault();ins('\n'+ind);}
+  }else if((e.ctrlKey||e.metaKey)&&e.key==='f'){e.preventDefault();toggleFind(true);}
+  else if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();download();}
+  else if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();showProblems();}
+});
+
+/* ===================== ВКЛАДКИ ===================== */
+function drawTabs(){const T=$('tabs');T.innerHTML='';
+  files.forEach((f,i)=>{const d=document.createElement('div');d.className='tab'+(i===cur?' on':'');d.innerHTML=esc(f.name)+(files.length>1?'<i data-x="'+i+'">✕</i>':'');
+    d.onclick=ev=>{if(ev.target.dataset.x!==undefined){closeFile(+ev.target.dataset.x);return;}switchFile(i);};T.appendChild(d);});
+  $('fname').textContent=files[cur].name;$('fsub').textContent='RW Code · '+ta.value.split('\n').length+' строк';}
+function switchFile(i){files[cur].text=ta.value;cur=i;ta.value=files[cur].text;drawTabs();runLint();render();updInfo();saveFiles();}
+function closeFile(i){files.splice(i,1);if(cur>=files.length)cur=files.length-1;ta.value=files[cur].text;drawTabs();runLint();saveFiles();}
+function newFile(name,text){files[cur].text=ta.value;files.push({name:name||'unit'+(files.length+1)+'.ini',text:text||'[core]\nname: \nprice: \nmaxHp: \nmass: \nradius: \n'});cur=files.length-1;ta.value=files[cur].text;drawTabs();runLint();render();updInfo();saveFiles();}
+
+/* ===================== ПОИСК ===================== */
+function toggleFind(on){const f=$('findbar');f.classList.toggle('on',on===undefined?!f.classList.contains('on'):on);if(f.classList.contains('on'))$('fq').focus();}
+$('bFind').onclick=()=>toggleFind();$('fx').onclick=()=>toggleFind(false);
+$('fn').onclick=()=>{const q=$('fq').value;if(!q)return;let i=ta.value.indexOf(q,ta.selectionEnd);if(i<0)i=ta.value.indexOf(q);if(i<0)return;ta.focus();ta.setSelectionRange(i,i+q.length);const ln=ta.value.slice(0,i).split('\n').length-1;ta.scrollTop=Math.max(0,ln*20-80);onCursor();};
+$('fa').onclick=()=>{const q=$('fq').value;if(!q)return;ta.focus();ta.select();ins(ta.value.split(q).join($('fr').value));};
+$('fq').addEventListener('keydown',e=>{if(e.key==='Enter')$('fn').click();});
+
+/* ===================== ДОП. КЛАВИШИ ===================== */
+const KEYS=[['⇥','    '],['[',null],[']',null],[':',null],['#',null],['@',null],['(',null],[')',null],["'",null],['=',null],[',',null],['_',null],['/',null],['${',null],['⏎','\n']];
+const kb=$('keys');
+KEYS.forEach(([l,v])=>{const b=document.createElement('button');b.textContent=l;b.onmousedown=b.ontouchstart=e=>e.preventDefault();
+  b.onclick=()=>{ta.focus();ins(v===null?l:v);};kb.appendChild(b);});
+$('bUndo').onclick=()=>{ta.focus();document.execCommand('undo');onInput();};
+$('bRedo').onclick=()=>{ta.focus();document.execCommand('redo');onInput();};
+$('bCheck').onclick=showProblems;
+
+/* ===================== ПАНЕЛИ ===================== */
+function openP(id){$(id).classList.add('on');}
+function closeAll(){document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));}
+document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',closeAll));
+
+/* Справочник */
+let rsecSel='all';
+function drawRef(){
+  const q=$('rq').value.toLowerCase();
+  const secs=['all','core','graphics','attack','movement','turret','projectile','action','canBuild','ai'];
+  $('rsec').innerHTML=secs.map(s=>'<span class="chip'+(s===rsecSel?' on':'')+'" data-s="'+s+'">'+(s==='all'?'все':s)+'</span>').join('');
+  $('rsec').querySelectorAll('.chip').forEach(c=>c.onclick=()=>{rsecSel=c.dataset.s;drawRef();});
+  const L=$('rlist');L.innerHTML='';
+  const es=allEntries().filter(e=>(rsecSel==='all'||e.sec===rsecSel)&&(!q||e.key.toLowerCase().includes(q)||(e.desc||'').toLowerCase().includes(q))).slice(0,150);
+  for(const e of es){const b=document.createElement('button');b.className='row';
+    b.innerHTML='<span class="kt mono">'+esc(e.key)+'</span> <span class="chip">'+esc(e.sec)+'</span>'+(e.ver?'<span class="chip">'+esc(e.ver)+'</span>':'')+(e.src==='s'?'<span class="chip">таблица</span>':'')+'<div class="t">'+esc(e.desc||'')+'</div>';
+    b.onclick=()=>{closeAll();ta.focus();ins(e.key+': ');};L.appendChild(b);}
+  if(!es.length)L.innerHTML='<div class="note">Ничего не найдено. Импортируйте таблицу через ⋮ → «Таблица RW».</div>';
+}
+$('bMenu').onclick=()=>{openP('drawer');drawRef();};$('rq').oninput=drawRef;
+
+/* Меню ⋮ */
+const SNIP={
+ 'Юнит (земля)':'[core]\nname: new_unit\ndisplayText: Новый юнит\nprice: 200\nmaxHp: 300\nmass: 3000\nradius: 12\ntechLevel: 1\nbuildSpeed: 8s\n\n[graphics]\ntotal_frames: 1\nimage: unit.png\nimage_wreak: none\n\n[attack]\ncanAttack: true\ncanAttackFlyingUnits: false\ncanAttackLandUnits: true\ncanAttackUnderwaterUnits: false\nmaxAttackRange: 140\nturretSize: 18\nturretTurnSpeed: 4\n\n[movement]\nmovementType: LAND\nmoveSpeed: 1\nmaxTurnSpeed: 3\n\n[turret_1]\nx: 0\ny: 0\nprojectile: 1\ndelay: 1s\n\n[projectile_1]\ndirectDamage: 20\nspeed: 6\nlife: 50\n',
+ 'Турель + снаряд':'[turret_2]\nx: 0\ny: 0\nprojectile: 2\ndelay: 0.5s\n\n[projectile_2]\ndirectDamage: 8\nspeed: 8\nlife: 40\n',
+ 'Кнопка (action)':'[action_1]\ntext: Действие\ndescription: Описание\nprice: credits=100\nbuildSpeed: 3s\nconvertTo: other_unit\n',
+ 'Автотриггер':'[hiddenAction_auto]\nautoTrigger: if self.hp < 100\ntemporarilyAddTags: weak\n',
+ 'Событие':'[hiddenAction_ev]\nautoTriggerOnEvent: created, teamChanged\nresetToDefaultTags: true\n',
+ 'Союзы DAF (подключение)':'[core]\ncopyFrom: ROOT:daf/core.template\n',
+ 'canBuild':'[canBuild_1]\nname: unit_name\npos: 1\n',
+ 'Template-секция':'[template_gun]\nx: 0\ny: 0\nprojectile: 1\n\n[turret_a]\n@copyFromSection template_gun\n'
+};
+function download(){files[cur].text=ta.value;
+  if(window.Android&&Android.saveFile){const r=Android.saveFile(files[cur].name,ta.value);toast(r.startsWith('ERR')?r:'Сохранено: '+r);return;}try{const b=new Blob([ta.value],{type:'text/plain'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=files[cur].name;document.body.appendChild(a);a.click();a.remove();}catch(e){}
+  copyText(ta.value);toast('Скопировано в буфер (скачивание может быть заблокировано)');}
+function copyText(t){try{navigator.clipboard.writeText(t).catch(()=>{});}catch(e){}}
+function toast(m){$('info').innerHTML='<b>'+esc(m)+'</b>';}
+function drawMenu(){
+  const M=$('mbody');
+  M.innerHTML='';
+  const add=(t,f)=>{const b=document.createElement('button');b.className='btn';b.textContent=t;b.onclick=f;M.appendChild(b);};
+  add('＋ Новый файл',()=>{closeAll();newFile();});
+  add('📂 Открыть файл…',()=>$('openf').click());
+  add('📋 Копировать код',()=>{copyText(ta.value);toast('Скопировано');closeAll();});
+  add('⬇ Скачать',()=>{closeAll();download();});
+  add('✎ Переименовать',()=>{const i=document.createElement('input');i.className='inp';i.value=files[cur].name;M.appendChild(i);i.focus();i.onkeydown=e=>{if(e.key==='Enter'){files[cur].name=i.value||files[cur].name;drawTabs();saveFiles();closeAll();}};});
+  add('A− / A+',()=>{const r=document.documentElement.style;const c=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--fs'))||14;const n=c>=18?11:c+1;r.setProperty('--fs',n+'px');render();});
+  const h=document.createElement('div');h.className='note';h.innerHTML='<b>Шаблоны</b>';M.appendChild(h);
+  for(const k in SNIP){const b=document.createElement('button');b.className='row';b.textContent='⧉ '+k;b.onclick=()=>{closeAll();ta.focus();ins((ta.value&&!ta.value.endsWith('\n')?'\n':'')+SNIP[k]);};M.appendChild(b);}
+  const h2=document.createElement('div');h2.innerHTML='<div class="note"><b>Таблица RW (словарь из Google Sheets)</b><br>Редактор сам не может читать Google Sheets (браузер блокирует сетевые запросы страниц). Вкладки таблицы импортируются так: откройте таблицу → вкладка (1.16, 1.15 …) → Файл → Скачать → CSV → «Открыть CSV» ниже. Или выделите ячейки, скопируйте и вставьте в поле.</div>';M.appendChild(h2);
+  const ts=document.createElement('textarea');ts.className='inp mono';ts.placeholder='Вставьте сюда скопированные ячейки / CSV…';M.appendChild(ts);
+  const tn=document.createElement('input');tn.className='inp';tn.placeholder='Название вкладки (необязательно), напр. 1.16';M.appendChild(tn);
+  const b1=document.createElement('button');b1.className='btn pri';b1.textContent='Импортировать вставленное';b1.onclick=()=>{const l=importRows(parseCSV(ts.value),tn.value);mergeSheet(l);toast('Импортировано записей: '+l.length);if(l.length)ts.value='';};M.appendChild(b1);
+  const b2=document.createElement('button');b2.className='btn';b2.textContent='Открыть CSV…';b2.onclick=()=>$('csvf').click();M.appendChild(b2);
+  const b3=document.createElement('button');b3.className='btn';b3.textContent='Попробовать онлайн-синхронизацию';b3.onclick=trySync;M.appendChild(b3);
+  const b4=document.createElement('button');b4.className='btn';b4.textContent='Очистить импорт ('+sheet.length+')';b4.onclick=()=>{sheet=[];saveSheetLS();updDictStatus();toast('Импорт очищен');};M.appendChild(b4);
+  const st=document.createElement('div');st.className='note';st.id='syncst';M.appendChild(st);
+}
+$('bMore').onclick=()=>{drawMenu();openP('menu');};
+const of=document.createElement('input');of.type='file';of.id='openf';of.accept='.ini,.template,.txt,*/*';of.hidden=true;document.body.appendChild(of);
+of.onchange=async()=>{for(const f of of.files){const t=await f.text();newFile(f.name,t);}of.value='';closeAll();};
+const cf=document.createElement('input');cf.type='file';cf.id='csvf';cf.accept='.csv,.tsv,.txt';cf.hidden=true;document.body.appendChild(cf);
+cf.onchange=async()=>{const f=cf.files[0];if(!f)return;const l=importRows(parseCSV(await f.text()),f.name.replace(/\.\w+$/,''));mergeSheet(l);toast('Из «'+f.name+'» импортировано: '+l.length);cf.value='';closeAll();};
+const SHEET='1aeP3pUic0IutZlgGix_cM8xR7LEH44gS4itAxETK954';
+const TABS=['1.16','1.15','1.15p4 beta','1.14','1.13.3','1.13.2','1.13','1.12','Team Reference','AutoTriggerOnEvent'];
+function nativeFetch(url){return new Promise((res,rej)=>{const cb='__nf'+Math.random().toString(36).slice(2);window[cb]=(ok,t)=>{delete window[cb];ok?res(t):rej(new Error(t));};Android.fetchUrl(url,cb);});}
+async function trySync(){const s=$('syncst')||{};
+  if(window.Android&&Android.fetchUrl){let total=0,fail=0;
+    for(const t of [''].concat(TABS)){s.textContent='Загрузка: '+(t||'главный лист')+'…';
+      try{const u='https://docs.google.com/spreadsheets/d/'+SHEET+(t?'/gviz/tq?tqx=out:csv&sheet='+encodeURIComponent(t):'/export?format=csv');
+        const l=importRows(parseCSV(await nativeFetch(u)),t||'main');mergeSheet(l);total+=l.length;}catch(e){fail++;}}
+    s.textContent='Готово: '+total+' записей, вкладок с ошибкой: '+fail+(fail&&!total?'. Откройте таблице доступ «всем по ссылке».':'');toast('Синхронизация: '+total+' записей');return;}
+  s.textContent='Пробую загрузить…';
+  try{const ctl=new AbortController();setTimeout(()=>ctl.abort(),6000);
+    const r=await fetch('https://docs.google.com/spreadsheets/d/'+SHEET+'/export?format=csv',{signal:ctl.signal});
+    const l=importRows(parseCSV(await r.text()),'online');mergeSheet(l);s.textContent='Готово: '+l.length+' записей.';}
+  catch(e){s.textContent='В браузере сеть заблокирована. Используйте импорт CSV или Android-приложение.';}}
+
+/* ===================== СТАРТ ===================== */
+loadFiles();loadSheetLS();updDictStatus();
+ta.value=files[cur].text;drawTabs();runLint();render();updInfo();showSugg();
+window.addEventListener('resize',syncScroll);
+if(window.Android&&Android.fetchUrl&&!sheet.length)setTimeout(trySync,800);
+</script>
+</body>
+</html>
